@@ -53,7 +53,7 @@ double max(double a, double b) {
 // Verifica quais pacotes devem ser incluídos no veículo e retorna a lista de pacotes que foram aceitos
 Package* checkPackage(Vehicle vehicle, Package *packages, int N) {
 
-  int V = vehicle.volume, W = vehicle.weight;
+  int V = vehicle.volume/2, W = vehicle.weight/2;
   // Inicializa a matriz com 3D
   double matriz[N + 1][W + 1][V + 1];
 
