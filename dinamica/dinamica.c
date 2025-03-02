@@ -8,6 +8,7 @@ typedef struct package {
   int weight;
   int volume;
   double value;
+  int selected;
 } Package;
 
 // Definição da struct do veículo
@@ -15,6 +16,9 @@ typedef struct vehicle {
   char *plateNumber;
   int weight;
   int volume;
+  int totalVolume;
+  double totalValue;
+  int totalWeight;
   int count;
   Package *selected;
 } Vehicle;
@@ -39,62 +43,87 @@ void readInput(void *array, FILE *input, int n, DataType type) {
 }
 
 // Adicionar um pacote na lista de pacotes selecionados
-void addPackage(Vehicle *vehicle, Package newPackage) {
-  vehicle->selected = realloc(vehicle->selected, vehicle->count * sizeof(Package));
-  vehicle->selected[vehicle->count] = newPackage;
-  vehicle->count++;
+void addPackage(Vehicle *vehicle, Package *packages, int index) {
+    vehicle->selected = realloc(vehicle->selected, (vehicle->count + 1) * sizeof(Package));
+    vehicle->selected[vehicle->count] = packages[index];
+    vehicle->count++;
+    vehicle->totalWeight += packages[index].weight;
+    vehicle->totalVolume += packages[index].volume;
+    vehicle->totalValue += packages[index].value;
+
+    packages[index].selected = 1;
 }
 
 // Retona o valor máximo 
 double max(double a, double b) {
   return (a > b) ? a : b;
 }
+
+void removePackage(Package *packages, int *qtdPackages) {
+    int rest = 0;
+    for (int i = 0; i < (*qtdPackages); i++) {
+        if (packages[i].selected) {
+            if (i + 1 < (*qtdPackages)) {
+                packages[i] = packages[*qtdPackages - 1];
+            }
+            rest += 1;
+        }
+    }
+    (*qtdPackages) -= rest;
+}
  
 // Verifica quais pacotes devem ser incluídos no veículo e retorna a lista de pacotes que foram aceitos
-Package* checkPackage(Vehicle vehicle, Package *packages, int N) {
+void checkPackage(Vehicle *vehicle, Package *packages, int *N) {
 
-  int V = vehicle.volume/2, W = vehicle.weight/2;
+  int V = vehicle->volume, W = vehicle->weight;
   // Inicializa a matriz com 3D
-  double matriz[N + 1][W + 1][V + 1];
+  double ***matriz = (double ***)malloc(((*N) + 1) * sizeof(double**));
 
-  // Inicializa todos os valores da matriz como zero
-  for (int i = 0; i <= N; i++) {
+  for (int i = 0; i <= (*N); i++) {
+    matriz[i] = (double **)malloc((W + 1) * sizeof(double *));
+
     for (int j = 0; j <= W; j++) {
-      for (int k = 0; k <= V; k++) {
-        matriz[i][j][k] = 0;
-      }
+      matriz[i][j] = (double *)calloc(V+1, sizeof(double));
     }
   }
 
-  // Verifica quais os produtos que serão incluídos
-  for (int i = 1; i <= N; i++) {
+  for (int i = 1; i <= (*N); i++) {
+    if (packages[i-1].selected == 1) 
+      continue;
+
     for (int j = 0; j <= W; j++) {
       for (int k = 0; k <= V; k++) {
-        if (packages[i].weight > j || packages[i].volume > k) {
-         matriz[i][j][k] = matriz[i-1][j][k];
+        if (packages[i-1].weight > j || packages[i-1].volume > k) {
+          matriz[i][j][k] = matriz[i-1][j][k];
         } else {
-          matriz[i][j][k] = max(matriz[i-1][j][k], matriz[i-1][j - packages[i].weight][k - packages[i].volume] + packages[i].value);
+          matriz[i][j][k] = max(matriz[i-1][j][k],
+                                matriz[i-1][j - packages[i-1].weight][k - packages[i-1].volume + packages[i-1].value);
         }
       }
     }
   }
 
   int j = W, k = V;
-  // Localiza os pacotes que fazem parte da solução final e adiciona num vetor
-  for (int i = N; i > 0; i--) {
+
+  for (int i = (*N); i > 0; i--) {
+    if (packages[i-1].selected == 1)
+      continue;
     if (matriz[i][j][k] != matriz[i-1][j][k]) {
-      addPackage(&vehicle, packages[i]);
+      addPackage(vehicle, packages, i - 1);
       j -= packages[i-1].weight;
       k -= packages[i-1].volume;
     }
   }
 
-  for (int i = 0; i < vehicle.count; i++) {
-    printf("%s %.1f \n", vehicle.selected[i].code, vehicle.selected[i].value);
-  }
+  removePackage(packages, N);
 
-  return vehicle.selected;
-
+    for (int i = 0; i <= (*N); i++) {
+        for (int j = 0; j <= W; j++) {
+            free(matriz[i][j]);
+        }
+        free(matriz[i]);
+    }
+    free(matriz);
 } // fim 
 
 // Main
@@ -126,7 +155,7 @@ int main(int argc, char *argv[]) {
   readInput(packages, input, qtdPackages, PACKAGE);
   
   for (int i = 0; i < qtdVehicle; i++) {
-    checkPackage(vehicles[i], packages, qtdPackages);
+    checkPackage(&vehicles[i], packages, &qtdPackages);
   }
 
 }

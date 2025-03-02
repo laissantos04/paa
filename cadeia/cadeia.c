@@ -26,57 +26,74 @@ void readInput(FILE *input, int ordem, Doenca *doenca) {
     doenca->qtd_subcadeias = 0;
 }
 
-char** quebrarCadeia(char *gene, int tam_subcadeia, int *qtd_subc) {
-  int tam_gene = strlen(gene);
-  int qtd_subcadeias = tam_gene - tam_subcadeia + 1;
-
-  if (qtd_subcadeias <= 0) {
-    qtd_subcadeias = 0;
-    return NULL;
-  }
-
-  char **subcadeias = (char**)malloc(qtd_subcadeias * sizeof(char*));
-  
-  for (int i = 0; i < qtd_subcadeias; i++) {
-    subcadeias[i] = (char*)malloc((tam_subcadeia + 1) * sizeof(char));
-    strncpy(subcadeias[i], gene+i, tam_subcadeia);
-    subcadeias[i][tam_subcadeia] = '\0';
-  }
-  *qtd_subc += qtd_subcadeias;
-  return subcadeias;
-}
-
-void inserir(int32_t *V, int32_t i, int32_t *c) {
-  V[*c] = i;
-  (*c)++;
-}
-
-void calcularTabela(int32_t *k, char *P) {
-  // i = sufixo, j = prefixo
-  for (int32_t i = 1, j = -1; i < strlen(P); i++) {
-    while (j >= 0 && P[j+1] != P[i])
+void calcularTabela(int *k, char *p) {
+  int m = strlen(p);
+  k[0] = -1;
+  for (int i = 1, j = -1; i < m; i++) {
+    while(j >= 0 && p[j+1] != p[i]) {
       j = k[j];
-    if (P[j+1] == P[i])
+    } 
+    if (p[j+1] == p[i]) {
       j++;
+    }
     k[i] = j;
   }
 }
 
-void KMP(int32_t *k, int32_t *R, char *T, char *P) {
-  // pré-processamento
-  int32_t n = strlen(T), m = strlen(P), c = 0;
-  calcularTabela(k, P);
+int contarCorrespondencias(int tamanhoSubcadeia, char *dna, char *gene) {
+  int n = strlen(dna), m = strlen(gene);
+  int contador = 0;
+  int i = 0, j = 0;
 
-  for (int32_t i = 0, j = -1; i < n; i++) {
-    while(j >= 0 && P[j+1] != T[i]) 
-      j = k[j];
-    if (P[j+1] == T[i])
+  while (i < m && j < n) {
+    int acc = 0;
+
+    while (j < n && dna[j] == gene[i]) {
+      acc++;
       j++;
-    if (j == m-1) {
-      inserir(R, i-m+1, &c);
-      j = k[j];
+      i++;
+    }
+
+    if (acc >= tamanhoSubcadeia) {
+      contador += acc;
+    }
+    j++;
+    i++;
+  }
+  return contador;
+}
+
+int contarOcorrencias(char *dna, char *gene, int tamanhoSubcadeia) {
+  int tamanho_gene = strlen(gene);
+  int tamanho_dna = strlen(dna);
+  int correspondencias = 0;
+  int contador = 0;
+  
+  int k[tamanho_dna];
+  int r[tamanho_gene];
+  
+   correspondencias = contarCorrespondencias(tamanhoSubcadeia, dna, gene);
+  printf("Correspondencias: %d\n", correspondencias);
+  return correspondencias;
+}
+
+
+double calcularProbabilidade(char **genes, int qtdGenes, char *dna, int tamanhoSubcadeia) {
+  int genesValidos = 0;
+
+  for (int i = 0; i < qtdGenes; i++) {
+    int caracteresCorresp = contarOcorrencias(dna, genes[i], tamanhoSubcadeia);
+    int tamanhoGene = strlen(genes[i]);
+
+    double percent = (double) caracteresCorresp / tamanhoGene * 100;
+
+    if (percent >= 90.0) {
+      genesValidos++;
     }
   }
+
+  double probabilidade = (double) genesValidos / qtdGenes * 100;
+  return probabilidade;
 }
 
 // Main
@@ -105,44 +122,16 @@ int main(int argc, char *argv[]) {
   fscanf(input, "%d", &qtd_doencas);
   Doenca doencas[qtd_doencas];
 
+  // Lendo os dados do arquivo de entrada
   for (int i = 0; i < qtd_doencas; i++) {
     readInput(input, i, &doencas[i]);
   }
 
   for (int i = 0; i < qtd_doencas; i++) {
-    int total_subcadeias = 0;
+    double percentual = calcularProbabilidade(doencas[i].genes, doencas[i].qtd_genes, dna, tam_cadeia);
 
-    for (int j = 0; j < doencas[i].qtd_genes; j++) {
-      int qtd_sub;
-      doencas[i].subcadeias = quebrarCadeia(doencas[i].genes[j], tam_cadeia, &qtd_sub);
-      total_subcadeias += qtd_sub;
-    }
 
-    doencas[i].subcadeias = malloc(total_subcadeias * sizeof(char *));
-    doencas[i].qtd_subcadeias = 0;
 
-    for (int j = 0; j < doencas[i].qtd_genes; j++) {
-      int qtd_sub = 0;
-      char **subcadeias = quebrarCadeia(doencas[i].genes[j], tam_cadeia, &qtd_sub);
-
-      for (int k = 0; k < qtd_sub; k++) {
-        doencas[i].subcadeias[doencas[i].qtd_subcadeias++] = subcadeias[k];
-      }
-      free(subcadeias);
-    }
+    printf("Doenca: %s -> Percentual: %.2f\n\n\n", doencas[i].nome, percentual);
   }
-
-  for (int i = 0; i < qtd_doencas; i++) {
-    for (int j = 0; j < doencas[i].qtd_subcadeias; j++) {
-      int32_t tabela[tam_cadeia];
-      int32_t indices[tam_dna];
-
-      KMP(tabela, indices, dna, doencas[i].subcadeias[j]);
-      for (int k = 0; k < tam_dna; k++) {
-        printf("%d ", indices[k]);
-      }
-      printf("\n###########\n");
-    }
-  }
-
 }
