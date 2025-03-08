@@ -6,95 +6,92 @@
 #define MAX_HEX 256
 // Definicao da estrutura dos bytes
 typedef struct dado {
-  int ordem;
-  int qtdBytes;
+  int ordem, qtdBytes, qtdTiposbytes;
   int *bytes;
-  int qtdTiposbytes;
   char **codigoHuffman;
 } Dado;
 
 // Definição do nó da árvore de prefixos
 typedef struct no {
-  // frequencia
-  int frequencia;
-  // código do símbolo
-  int simbolo;
-  // nó direito e esquerdo
+  int frequencia, simbolo;
   struct no *direita, *esquerda;
 } No;
 
-// Definição da fila de prioridades que será utilizada
+// Definição da fila de prioridade
 typedef struct filaPraMin {
   No **heap;
   int tamanho;
 } FilaPMin;
 
-// Definição do histograma que será usado para construir a fila 
+// Definição do histograma
 typedef struct histograma {
-  int frequencia;
-  int numero;
+  int frequencia, numero;
 } Histograma;
 
+// Definição dos dados comprimidos Huffman e RLE
 typedef struct huff {
-  int contador;
-  int flag;
+  int contador, flag;
   float porcentagemCompressao;
-  uint64_t dadoComprimido;
+  char* dadoComprimido;
 } Huff;
+
+typedef struct rle {
+  float porcentagemCompressao;
+  int *dadoComprimido;
+  int i;
+} RLE;
 
 // Ler os dados do arquivo de entrada
 void readInput(FILE *input, Dado *novoDado) {
   fscanf(input, "%d", &novoDado->qtdBytes);
-  novoDado->bytes = (malloc(novoDado->qtdBytes * (sizeof(char*))));
+  novoDado->bytes = (malloc(novoDado->qtdBytes * (sizeof(int))));
 
   for (int i = 0; i < novoDado->qtdBytes; i++) {
     fscanf(input, "%x", &novoDado->bytes[i]);
   }
-  novoDado->codigoHuffman = NULL;
 }
 
 Histograma *contarFrequenciaBytes(Dado *dado) {
-  int n = dado->qtdBytes;
   int frequencias[MAX_HEX] = {0};
-  int index = 0;
   dado->qtdTiposbytes = 0;
-
   Histograma *histograma = malloc(MAX_HEX * sizeof(Histograma));
 
-  for (int i = 0; i < n; i++) {
+  // Inicializando o histograma com frequências 0
+  for (int i = 0; i < MAX_HEX; i++) {
+    histograma[i].frequencia = 0;
+    histograma[i].numero = i;  // Opcional: inicializar número, dependendo da lógica
+  }
+
+  for (int i = 0; i < dado->qtdBytes; i++) {
     frequencias[dado->bytes[i]] += 1;
   }
 
-  for (int i = 0; i < MAX_HEX; i++) {
-    if (frequencias[i]) {
-      histograma[index].frequencia = frequencias[i];
-      dado->qtdTiposbytes++;
-      histograma[index].numero = i;
-      index++;
+    for (int i = 0, index = 0; i < MAX_HEX; i++) {
+      if (frequencias[i]) {
+        histograma[index].frequencia = frequencias[i];
+        histograma[index].numero = i;
+        dado->qtdTiposbytes++;
+        index++;
+      }
     }
-  }
-
   return histograma;
 }
 
 // Inicializa a fila de prioridades
 FilaPMin *inicializarFila() {
   FilaPMin *fila = (FilaPMin *)malloc(sizeof(FilaPMin));
-
-    fila->tamanho = 0;
-    fila->heap = (No**)malloc(MAX_HEX * sizeof(No*));
-
+  fila->heap = (No**)malloc(MAX_HEX * sizeof(No*));
+  fila->tamanho = 0;
   return fila;
 }
 
 // Inicializa um novo nó
 No *criarNo(int numero, int frequencia, No *direita, No *esquerda) {
   No *novoNo = malloc(sizeof(No));
-  
-    novoNo->frequencia = frequencia;
-    novoNo->simbolo = numero;
-    novoNo->direita = direita;
-    novoNo->esquerda = esquerda;
+  novoNo->frequencia = frequencia;
+  novoNo->simbolo = numero;
+  novoNo->direita = direita;
+  novoNo->esquerda = esquerda;
   
   return novoNo;
 }
@@ -102,12 +99,9 @@ No *criarNo(int numero, int frequencia, No *direita, No *esquerda) {
 // heapify
 void heapify(FilaPMin *fila, int index) {
 
-
-  if (index == 0) return;
-
   int pai = (index - 1)/2;
 
-  if (fila->heap[pai]->frequencia > fila->heap[index]->frequencia) {
+  if (index > 0 && fila->heap[pai]->frequencia > fila->heap[index]->frequencia) {
     No *temp = fila->heap[pai];
     fila->heap[pai] = fila->heap[index];
     fila->heap[index] = temp;
@@ -122,7 +116,6 @@ void inserir(FilaPMin *fila, No *novoNo) {
   fila->heap[i] = novoNo;
   heapify(fila, fila->tamanho);
   fila->tamanho++;
-
 }
 
 // Gera a fila de prioridades com base nas frequencias do histograma
@@ -130,13 +123,10 @@ FilaPMin *criarFilaPrioridade(Histograma *histograma) {
 
   FilaPMin *fila = inicializarFila();
 
-  for (int i = 0; i < MAX_HEX; i++) {
-    if (histograma[i].frequencia > 0) {
-      No *novoNo = criarNo(histograma[i].numero, histograma[i].frequencia, NULL, NULL);
-      inserir(fila, novoNo);
-    }
+  for (int i = 0; i < MAX_HEX && histograma[i].frequencia; i++) {
+      inserir(fila, criarNo(histograma[i].numero, histograma[i].frequencia, NULL, NULL));
   }
-    return fila;
+  return fila;
 }
 
 // Heapify min
@@ -193,15 +183,10 @@ No *construirArvore(Histograma *histograma) {
 
 void preencherTabela(No *raiz, char **tabela, char *caminho, int profundidade) {
   
-  if (raiz == NULL) return;
+  if (!raiz) return;
 
-  if (raiz->esquerda == NULL && raiz->direita == NULL) {
-    if (profundidade == 0) {
-      caminho[0] = '0';
-      caminho[1] = '\0';
-    } else {
-      caminho[profundidade] = '\0';
-    }
+  if (!raiz->esquerda && !raiz->direita) {
+    caminho[profundidade] = '\0';
     tabela[raiz->simbolo] = strdup(caminho);
     return;
   }
@@ -217,27 +202,44 @@ char **gerarTabelaHuff(No *raiz) {
   char **tabelaHuff = (char **)calloc(MAX_HEX, sizeof(char *));
   char caminho[MAX_HEX];
 
-  if (raiz == NULL) return tabelaHuff;
-
   preencherTabela(raiz, tabelaHuff, caminho, 0);
   return tabelaHuff;
 }
 
 void gerarCodigosHuff(int *bytes, char **tabelaHuff, char **codigos, int qtdBytes) {
    for (int i = 0; i < qtdBytes; i++) {
-    codigos[i] = malloc(MAX_HEX * sizeof(char));
-    strcpy(codigos[i], tabelaHuff[bytes[i]]);
+    codigos[i] = strdup(tabelaHuff[bytes[i]]);
   }
 }
 
 int calcularProfundidade(No *raiz) {
-  if (raiz == NULL) return 0;
-  if (raiz->esquerda == NULL && raiz->direita == NULL) return 1;
+  if (!raiz) return 0;
+  if (!raiz->esquerda && !raiz->direita) return 1;
 
     int profundidadeEsq = calcularProfundidade(raiz->esquerda);
     int profundidadeDir = calcularProfundidade(raiz->direita);
     
   return 1 + ((profundidadeEsq > profundidadeDir) ? profundidadeEsq : profundidadeDir);
+}
+
+float calcularPorcentagemCompressao(float tamanhoCompactado, int qtd) {
+  return ((float)tamanhoCompactado/(qtd * 2)) * 100;
+}
+
+void gerarString(Dado *dado, char **tabelaHuff, char **c) {
+  int tamanho = dado->qtdBytes * 8 + 1;
+  *c = malloc(tamanho * sizeof(char));
+  (*c)[0] = '\0';
+
+  for (int i = 0; i < dado->qtdBytes; i++) {
+    strcat(*c, tabelaHuff[dado->bytes[i]]);
+  }
+
+  while(strlen(*c) % 8 != 0) {
+    strcat(*c, "0");
+  }
+
+//  printf("String binária gerada: %s\n", *c);  // Debug aqui
 }
 
 void compactar(Dado *dados, char **tabelaHuff, Huff *huffmanCompactado, int profundidadeArvore) {
@@ -251,64 +253,122 @@ void compactar(Dado *dados, char **tabelaHuff, Huff *huffmanCompactado, int prof
       qtd -= 8;
     }
 
-    float porcentagem = ((float)(contador * 2)/(dados->qtdBytes * 2)) * 100;
-    huffmanCompactado->porcentagemCompressao = porcentagem;
+    huffmanCompactado->porcentagemCompressao = calcularPorcentagemCompressao(contador*2, dados->qtdBytes);
     huffmanCompactado->contador = contador;
   } else {
     huffmanCompactado->flag = 0;
-    char *c = malloc((dados->qtdBytes * 8 + 1) * sizeof(char));
-    c[0] = '\0';
+    gerarString(dados, tabelaHuff, &huffmanCompactado->dadoComprimido);
+    //bin_to_hex(huffmanCompactado->dadoComprimido);
 
-    for (int i = 0; i < dados->qtdBytes; i++) {
-      strcat(c, tabelaHuff[dados->bytes[i]]);
-    }
-
-    while (strlen(c) % 8 != 0) {
-      strcat(c, "0");
-    }
-
-    float porcentagem = ((float)strlen(c)/ 4 / (dados->qtdBytes * 2)) * 100;
-    huffmanCompactado->porcentagemCompressao = porcentagem;
-
-    uint64_t num = strtoull(c, NULL, 2);
-    huffmanCompactado->dadoComprimido = num;
-    huffmanCompactado->contador = (int)(strlen(c)/4);
-    free(c);
-
+    float tamanho = (float)strlen(huffmanCompactado->dadoComprimido)/4;
+    huffmanCompactado->porcentagemCompressao = calcularPorcentagemCompressao(tamanho, dados->qtdBytes);
+    //huffmanCompactado->dadoComprimido = strtoull(c, NULL, 2);
+    //printf("Valor convertido: %llu\n", huffmanCompactado->dadoComprimido);
+    //huffmanCompactado->contador = (int)(strlen(huffmanCompactado->dadoComprimido)/4);
+  //  free(c);
   }
 }
 
 Huff *huffman(Dado *dados) {
-  // Constrói o histograma
-  Histograma *histograma = contarFrequenciaBytes(dados);
-  // Cria uma fila de prioridade mínima usando o histograma
-  FilaPMin *fila = criarFilaPrioridade(histograma); 
-  // Constrói a árvore de Huffman
+  Histograma *histograma = contarFrequenciaBytes(dados); 
   No *topo = construirArvore(histograma);
-  // Gera a tabela de correspondências de Huffman
   char **tabelaHuff = gerarTabelaHuff(topo);
-  // Gera os códigos de cada byte
   char **codigos = malloc(dados->qtdBytes * sizeof(char *));
   gerarCodigosHuff(dados->bytes, tabelaHuff, codigos, dados->qtdBytes);
-  // Compacta os códigos Huffman gerados
   Huff *huffmanCompactado = malloc(sizeof(Huff));
-  int profundidadeArvore = calcularProfundidade(topo);
-  compactar(dados, tabelaHuff, huffmanCompactado, profundidadeArvore);
+  compactar(dados, tabelaHuff, huffmanCompactado, calcularProfundidade(topo));
 
   return huffmanCompactado;
 }
 
-void printHuffman(Huff *huffman, Dado *dado, FILE *output) {
-  fprintf(output, "%d->HUF(%.2f%%)=", dado->ordem, huffman->porcentagemCompressao);
-  
-  if (huffman->flag) {
-    for (int i = 0; i < huffman->contador; i++) {
-      fprintf(output, "00");
+void bin_to_hex(const char *bin) {
+    int len = strlen(bin);
+    int num_bytes = (len + 7) / 8; // Arredonda para cima se não for múltiplo de 8
+    unsigned char *bytes = malloc(num_bytes);
+
+    if (!bytes) {
+        printf("Erro ao alocar memória.\n");
+        return;
     }
-    fprintf(output, "\n");
-  } else {
-    fprintf(output, "%0*lX\n", huffman->contador,huffman->dadoComprimido);
+
+    memset(bytes, 0, num_bytes);
+
+    for (int i = 0; i < len; i++) {
+        int byte_pos = i / 8;
+        bytes[byte_pos] = (bytes[byte_pos] << 1) | (bin[i] - '0');
+    }
+
+   // printf("Hexadecimal: ");
+    for (int i = 0; i < num_bytes; i++) {
+        printf("%02X", bytes[i]);
+    }
+    printf("\n");
+
+    free(bytes);
+}
+
+
+void printHuffman(FILE *output, int ordem, Huff *huffman) {
+  fprintf(output, "%d->HUF(%.2f%%)=", ordem, huffman->porcentagemCompressao);
+  
+  int tamanhoBinario = strlen(huffman->dadoComprimido);
+  int numBytes = (tamanhoBinario + 7) / 8;
+  unsigned char *bytes = malloc(numBytes);
+
+  memset(bytes, 0, numBytes);
+
+  for (int i = 0; i < tamanhoBinario; i++) {
+    int posicaoByte = i/8;
+    bytes[posicaoByte] = (bytes[posicaoByte] << 1 | huffman->dadoComprimido[i] - '0');
   }
+
+  for (int i = 0; i < numBytes; i++) {
+    fprintf(output, "%02X", bytes[i]);
+  }
+  fprintf(output, "\n");
+  
+  free(bytes);
+}
+
+RLE *contarBytesRLE(Dado *dados) {
+  
+  RLE *rle = malloc(sizeof(RLE));
+  rle->dadoComprimido = malloc((dados->qtdBytes * 2) * sizeof(int));
+
+  int qtd = dados->qtdBytes;
+  int index = 0;
+
+  for (int i = 0; i < qtd; i++) {
+    int contador = 1;
+    int atual = dados->bytes[i];
+
+    while (i + 1 < qtd && atual == dados->bytes[i + 1]) {
+      contador++;
+      i++;
+    }
+    
+    rle->dadoComprimido[index] = contador;
+    rle->dadoComprimido[index + 1] = dados->bytes[i];
+    index += 2;
+    contador = 1;
+  }
+
+  rle->porcentagemCompressao = calcularPorcentagemCompressao(index * 2, qtd);
+  rle->i = index;
+
+  return rle;
+}
+
+void printRLE(FILE *output, Dado *dado, RLE *rle) {
+  fprintf(output, "%d->RLE(%.2f%%)=", dado->ordem, rle->porcentagemCompressao);
+  
+  for (int i = 0; i < rle->i; i+=2) {
+    fprintf(output, "%02X", rle->dadoComprimido[i]);
+    fprintf(output, "%02X", rle->dadoComprimido[i + 1]);
+  }
+
+  fprintf(output, "\n");
+
 }
 
 int main (int argc, char *argv[]) {
@@ -328,20 +388,30 @@ int main (int argc, char *argv[]) {
 
   int qtdDados;
   fscanf(input, "%d", &qtdDados);
-  Dado **todosDados = malloc(qtdDados * sizeof(Dado*));
-  
+
   // Ler os dados e armazenar num vetor
   for (int i = 0; i < qtdDados; i++) {
-    todosDados[i] = malloc(sizeof(Dado));
-    todosDados[i]->ordem = i;
-    readInput(input, todosDados[i]);
+    Dado *dado = malloc(sizeof(Dado));
+    readInput(input, dado);
+    dado->ordem = i;
+
+    Huff *huff = huffman(dado);
+    RLE *rle = contarBytesRLE(dado);
+    if (huff->porcentagemCompressao == rle->porcentagemCompressao) {
+      printHuffman(output, i, huff);
+      printRLE(output, dado, rle);
+    } else if (huff->porcentagemCompressao > rle->porcentagemCompressao) {
+      printRLE(output, dado, rle);
+    } else {
+      printHuffman(output, i, huff);
+    } 
+  
+    free(dado);
+    free(huff);
+    free(rle);
   }
 
-  // Processa cada conjunto de dados individualmente
-  for (int i = 0; i < qtdDados; i++) {
-    Huff *huff = huffman(todosDados[i]);
-    printHuffman(huff, todosDados[i], output);
-  }
-
-
+  fclose(input);
+  fclose(output);
+  return 0;
 }
